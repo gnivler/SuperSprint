@@ -1,81 +1,96 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.IO;
 using System.Reflection;
 using BepInEx;
 using Harmony;
 using UnityEngine;
+using static CustomKeybindings;
+using static BlockingDamageAdjuster.Logger;
+using static SuperSprint.SuperSprint;
 
 namespace SuperSprint
 {
-    [BepInPlugin("com.gnivler.HuntersEyeHack", "HuntersEyeHack", "1.0.0")]
+    [BepInPlugin("com.gnivler.SuperSprint", "SuperSprint", "1.1")]
     public class SuperSprint : BaseUnityPlugin
     {
+        internal static Settings modSettings = new Settings();
+
+        public class Settings
+        {
+            public float mediumSpeed = 1;
+            public float fastSpeed = 1;
+            public bool autoRun = false;
+            public bool enableDebug = false;
+        }
+
         public void Awake()
         {
-           
-            var harmony = HarmonyInstance.Create("com.gnivler.HuntersEyeHack");
+            var harmony = HarmonyInstance.Create("com.gnivler.SuperSprint");
             harmony.PatchAll(Assembly.GetExecutingAssembly());
+
+            AddAction(
+                "SuperSprint Medium",
+                KeybindingsCategory.Actions,
+                ControlType.Both, 4);
+            AddAction(
+                "SuperSprint Fast",
+                KeybindingsCategory.Actions,
+                ControlType.Both, 4);
+
+            try
+            {
+                using (StreamReader reader = new StreamReader(
+                    Directory.GetParent(Assembly.GetExecutingAssembly().Location).FullName +
+                    "\\SuperSprint.json"))
+                {
+                    var json = reader.ReadToEnd();
+                    modSettings = JsonUtility.FromJson<Settings>(json);
+                }
+            }
+            catch (Exception e)
+            {
+                Error(e);
+            }
+
+            LogDebug($"{DateTime.Now.ToShortTimeString()} SuperSprint Starting up");
         }
     }
 
     public static class Patches
     {
-        private static bool autoRun = false;
-    
+        private static bool autoRun;
+
         [HarmonyPatch(typeof(LocalCharacterControl), "UpdateMovement", MethodType.Normal)]
         public class AutoRun
         {
             public static void Postfix(bool ___m_autoRun)
             {
+                if (!modSettings.autoRun) return;
                 autoRun = ___m_autoRun;
             }
         }
-    
-        [HarmonyPatch(typeof(CharacterStats), "SprintStaminaCost", MethodType.Getter)]
-        public class SprintStaminaCost
-        {
-            public static void Postfix(ref float __result) => __result = __result * 0.1f;
-        }
-    
+
         [HarmonyPatch(typeof(CharacterStats), "MovementSpeed", MethodType.Getter)]
         public class MovementSpeed
         {
-            public static void Postfix(ref float __result)
+            public static void Postfix(CharacterStats __instance, ref float __result)
             {
-                if (autoRun)
+                if (__instance.m_character.Faction != Character.Factions.Player) return;
+                if (modSettings.autoRun && autoRun)
                 {
-                    __result *= 2.5f;
-                    if (Input.GetKey(KeyCode.X))
-                    {
-                        __result *= 4f;
-                    }
+                    __result = modSettings.mediumSpeed;
                 }
-    
-                if (Input.GetKey(KeyCode.X))
+
+                var playerID = __instance.m_character.OwnerPlayerSys.PlayerID;
+                if (m_playerInputManager[playerID].GetButton("SuperSprint Medium"))
                 {
-                    __result *= 2.5f;
+                    __result = modSettings.mediumSpeed;
                 }
-            }
-        }
-    
-        [HarmonyPatch(typeof(CraftingMenu), "TryCraft", MethodType.Normal)]
-        public class InstantCraft
-        {
-            public static void Prefix(CraftingMenu __instance, ref float ___CraftingTime)
-            {
-                ___CraftingTime = 0f;
-            }
-        }
-    
-    [HarmonyPatch(typeof(TargetingSystem), "TrueRange", MethodType.Getter)]
-    public class HuntersEyeNoItem
-    {
-        public static void Postfix(TargetingSystem __instance, Character ___m_character, ref float __result)
-        {
-            if (___m_character != null)
-            {
-                __result = ___m_character.Inventory.SkillKnowledge.IsItemLearned(8205160)
-                    ? __instance.HunterEyeRange
-                    : __instance.LongRange;
+
+                if (m_playerInputManager[playerID].GetButton("SuperSprint Fast"))
+                {
+                    __result = modSettings.fastSpeed;
+                }
             }
         }
     }

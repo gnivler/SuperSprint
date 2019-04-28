@@ -1,3 +1,6 @@
 {
-  
+  "mediumSpeed": 3,
+  "fastSpeed": 5,
+  "autoRun": true,
+  "enableDebug": false
 }

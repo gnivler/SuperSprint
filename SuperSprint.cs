@@ -4,13 +4,10 @@ using System.Reflection;
 using BepInEx;
 using Harmony;
 using UnityEngine;
-using static CustomKeybindings;
-using static BlockingDamageAdjuster.Logger;
-using static SuperSprint.SuperSprint;
 
 namespace SuperSprint
 {
-    [BepInPlugin("com.gnivler.SuperSprint", "SuperSprint", "1.1")]
+    [BepInPlugin("com.gnivler.SuperSprint.Outward", "SuperSprint", "1.3")]
     public class SuperSprint : BaseUnityPlugin
     {
         internal static Settings modSettings = new Settings();
@@ -19,23 +16,23 @@ namespace SuperSprint
         {
             public float mediumSpeed = 1;
             public float fastSpeed = 1;
-            public bool autoRun = false;
+            public bool autoRun = true;
             public bool enableDebug = false;
         }
 
         public void Awake()
         {
-            var harmony = HarmonyInstance.Create("com.gnivler.SuperSprint");
+            var harmony = HarmonyInstance.Create("com.gnivler.SuperSprint.Outward");
             harmony.PatchAll(Assembly.GetExecutingAssembly());
 
-            AddAction(
+            CustomKeybindings.AddAction(
                 "SuperSprint Medium",
-                KeybindingsCategory.Actions,
-                ControlType.Both, 4);
-            AddAction(
+                CustomKeybindings.KeybindingsCategory.Actions,
+                CustomKeybindings.ControlType.Both, 4);
+            CustomKeybindings.AddAction(
                 "SuperSprint Fast",
-                KeybindingsCategory.Actions,
-                ControlType.Both, 4);
+                CustomKeybindings.KeybindingsCategory.Actions,
+                CustomKeybindings.ControlType.Both, 4);
 
             try
             {
@@ -49,10 +46,10 @@ namespace SuperSprint
             }
             catch (Exception e)
             {
-                Error(e);
+                global::SuperSprint.Logger.Error(e);
             }
 
-            LogDebug($"{DateTime.Now.ToShortTimeString()} SuperSprint Starting up");
+            Logger.LogDebug($"{DateTime.Now.ToShortTimeString()} SuperSprint Starting up");
         }
     }
 
@@ -65,7 +62,7 @@ namespace SuperSprint
         {
             public static void Postfix(bool ___m_autoRun)
             {
-                if (!modSettings.autoRun) return;
+                if (!SuperSprint.modSettings.autoRun) return;
                 autoRun = ___m_autoRun;
             }
         }
@@ -75,22 +72,32 @@ namespace SuperSprint
         {
             public static void Postfix(CharacterStats __instance, ref float __result)
             {
-                if (__instance.m_character.Faction != Character.Factions.Player) return;
-                if (modSettings.autoRun && autoRun)
+                var character = Traverse.Create(__instance).Field("m_character").GetValue<Character>();
+                if (character.Faction != Character.Factions.Player) return;
+                if (SuperSprint.modSettings.autoRun && autoRun)
                 {
-                    __result = modSettings.mediumSpeed;
+                    __result = SuperSprint.modSettings.mediumSpeed;
                 }
 
-                var playerID = __instance.m_character.OwnerPlayerSys.PlayerID;
-                if (m_playerInputManager[playerID].GetButton("SuperSprint Medium"))
+                var playerID = character.OwnerPlayerSys.PlayerID;
+                if (CustomKeybindings.m_playerInputManager[playerID].GetButton("SuperSprint Medium"))
                 {
-                    __result = modSettings.mediumSpeed;
+                    __result = SuperSprint.modSettings.mediumSpeed;
                 }
 
-                if (m_playerInputManager[playerID].GetButton("SuperSprint Fast"))
+                if (CustomKeybindings.m_playerInputManager[playerID].GetButton("SuperSprint Fast"))
                 {
-                    __result = modSettings.fastSpeed;
+                    __result = SuperSprint.modSettings.fastSpeed;
                 }
+            }
+        }
+
+        [HarmonyPatch(typeof(CraftingMenu), "TryCraft", MethodType.Normal)]
+        public class InstantCraft
+        {
+            public static void Prefix(ref float ___CraftingTime)
+            {
+                ___CraftingTime = 0f;
             }
         }
     }

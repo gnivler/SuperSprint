@@ -2,12 +2,13 @@ using System;
 using System.IO;
 using System.Reflection;
 
-namespace BlockingDamageAdjuster
+namespace SuperSprint
 {
     public static class Logger
     {
         private static string LogFilePath => 
-            Directory.GetParent(Assembly.GetExecutingAssembly().Location).FullName + "\\SuperSprint.log.txt";
+            Directory.GetParent(Assembly.GetExecutingAssembly().Location).FullName +
+            "\\SuperSprint.log.txt";
 
         public static void Error(Exception ex)
         {
@@ -20,7 +21,7 @@ namespace BlockingDamageAdjuster
 
         public static void LogDebug(string line)
         {
-            if (!SuperSprint.SuperSprint.modSettings.enableDebug) return;
+            if (!SuperSprint.modSettings.enableDebug) return;
             using (var writer = new StreamWriter(LogFilePath, true))
             {
                 writer.WriteLine(line);

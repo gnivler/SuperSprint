@@ -1,12 +1,9 @@
-using System;
-using UnityEngine;
-using On;
-using UnityEngine.UI;
-using MonoMod.RuntimeDetour; // for manual hooks
-using Rewired; // for InputManager_Base class
-using Rewired.Data; // for UserData class
-using System.Reflection;
 using System.Collections.Generic;
+using System.Reflection;
+using Harmony;
+using Rewired;
+using Rewired.Data;
+using UnityEngine;
 
 namespace SuperSprint
 {
@@ -29,7 +26,7 @@ namespace SuperSprint
         // 5 - Section
         // 6 - ActionCategory_VirtualCursor
         // 7 - Section
-        public enum KeybindingsCategory : int
+        public enum KeybindingsCategory
         {
             Actions = 4,
             QuickSlot = 2,
@@ -37,7 +34,7 @@ namespace SuperSprint
         }
 
         // To choose whether your keybinding show up under keyboard & mouse, controller or both
-        public enum ControlType : int
+        public enum ControlType
         {
             Keyboard,
             Gamepad,
@@ -64,13 +61,6 @@ namespace SuperSprint
         //
         public static void AddAction(string name, KeybindingsCategory categoryId, ControlType controlType, int sectionId = 0, InputActionType type = InputActionType.Button)
         {
-            // The user does not have to initialize or instantiate anything themselves to use custom keybinds
-            // Just call AddAction() and we'll make sure the plumbing is there
-            if (orig_Initialize == null)
-            {
-                InitHooks();
-            }
-
             // Capture the info the user has specified for the action they would like to create
             InputActionDescription protoAction = new InputActionDescription(name, (int) categoryId, controlType, sectionId, type);
             myActionInfos.Add(protoAction);
@@ -127,137 +117,113 @@ namespace SuperSprint
         // The action id keyes the user-created InputActionDescription structs that were made to create that action
         private static Dictionary<int, InputActionDescription> myCustomActionIds = new Dictionary<int, InputActionDescription>();
 
-        // To add our own keybind actions natively we need to intercept a method in a Rewired dll.
-        // Normally, we use the hooks that Partiality uses MonoMod to generate (called HookGen),
-        // but Partiality only instructs MonoMod to hook methods in the Assembly-CSharp.dll file,
-        // so we need to manually hook the Rewired method. We do this in exactly the same way that
-        // Partiality uses MonoMod--with MonoMod.RuntimeDetour--but we do it manually.
-        private static void InitHooks()
+        [HarmonyPatch(typeof(InputManager_Base), "Initialize")]
+        public class InputManager_Base_Initialize_Patch
         {
-            // Create the manual hook of the Initialize method in Rewired's InputManager_Base class
-            orig_Initialize = (h_Initialize = new Detour(
-                typeof(InputManager_Base).GetMethod("Initialize", BindingFlags.Instance | BindingFlags.NonPublic),
-                typeof(CustomKeybindings).GetMethod("InputManager_Base_Initialize", BindingFlags.Static | BindingFlags.NonPublic)
-            )).GenerateTrampoline<d_Initialize>();
-
-            // Use a normal HookGen hook of the bindings panel to add action-to-element maps for our custom actions
-            // ActionElementMaps bind a keyboard key or controller or mouse input to an action
-            On.ControlMappingPanel.InitSections += new On.ControlMappingPanel.hook_InitSections(ControlMappingPanel_InitSections);
-
-            // Use a normal HookGen hook of the localization manager to give our keybinding a nice name in the bindings menu
-            On.LocalizationManager.StartLoading += new On.LocalizationManager.hook_StartLoading(LocalizationManager_StartLoading);
-        }
-
-        // These are some things we need to store for our manual hook of the Initialize method on Rewired.InputManager_Base
-        private static Detour h_Initialize;
-
-        private delegate void d_Initialize(InputManager_Base self);
-
-        private static d_Initialize orig_Initialize;
-
-        // The famed Rewired hook
-        private static void InputManager_Base_Initialize(InputManager_Base self)
-        {
-            // Add our custom actions, which will be exposed in the keybindings menu by tying an action to an "element"--i.e. a keyboard key or joystick input
-
-            // Loop through the infos/descriptions that the user has specified for adding actions
-            foreach (InputActionDescription myActionDescription in myActionInfos)
+            // The famed Rewired hook
+            //private static void InputManager_Base_Initialize(InputManager_Base self)
+            public static void Prefix(InputManager_Base __instance)
             {
-                // This actually creates the new actions:
-                // The AddRewiredAction method is just a wrapper I made for UserData.AddAction(_categoryId), since it's a little fiddly to configure an InputAction
-                InputAction myNewlyAddedAction = AddRewiredAction(self.userData, myActionDescription.name, myActionDescription.type, "No descriptiveName", myActionDescription.categoryId, true); // true for userAssignable
+                // Add our custom actions, which will be exposed in the keybindings menu by tying an action to an "element"--i.e. a keyboard key or joystick input
 
-                // We keep a list of our actions that we've added, so that it's easy to get them later
-                // We also keep the InputActionDescription because we will use it later for sorting & localization
-                myCustomActionIds[myNewlyAddedAction.id] = myActionDescription;
+                // Loop through the infos/descriptions that the user has specified for adding actions
+                foreach (InputActionDescription myActionDescription in myActionInfos)
+                {
+                    // This actually creates the new actions:
+                    // The AddRewiredAction method is just a wrapper I made for UserData.AddAction(_categoryId), since it's a little fiddly to configure an InputAction
+                    InputAction myNewlyAddedAction = AddRewiredAction(
+                        __instance.userData, myActionDescription.name, myActionDescription.type, "No descriptiveName", myActionDescription.categoryId, true); // true for userAssignable
+
+                    // We keep a list of our actions that we've added, so that it's easy to get them later
+                    // We also keep the InputActionDescription because we will use it later for sorting & localization
+                    myCustomActionIds[myNewlyAddedAction.id] = myActionDescription;
+                }
             }
-
-            // And that's it. That's all we needed to hook Rewired for
-            // Call original implementation to continue Rewired initialization
-            orig_Initialize(self);
         }
 
         // Create Action-to-Element mapping objects, which are what is shown in the keybindings menu
         // This could have been implemented elsewhere than the ControlMappingPanel, but the InitSections
         // method is conveniently passed the actual ControllerMap that we need to add our ActionElementMap to
-        private static void ControlMappingPanel_InitSections(On.ControlMappingPanel.orig_InitSections orig, ControlMappingPanel self, ControllerMap _controllerMap)
+        [HarmonyPatch(typeof(ControlMappingPanel), "InitSections")]
+        public class InitSectionsPatch
         {
-            // Loop through our custom actions we added via Rewired
-            foreach (int myActionId in myCustomActionIds.Keys)
+            public static void Prefix(ControlMappingPanel __instance, ControllerMap _controllerMap)
             {
-                // The info that the user specified for this action
-                InputActionDescription myActionDescription = myCustomActionIds[myActionId];
-
-                // There are separate keybinding maps for keyboard, mouse, & controllers
-                // We only add our action-to-element mappings to the keybind maps that make sense
-                // For example, if you are adding a key that doesn't make sense to have on a controller,
-                // then skip when _controllerMap is JoystickMap
-                //
-                // (Optional)
-                // You can check if this method is being called for the Keyboard/Mouse bindings panel or
-                // the Controller bindings panel, but I prefer to check the class of the _controllerMap
-                //   if (self.ControllerType == ControlMappingPanel.ControlType.Keyboard) {
-                //
-
-                bool shouldLog = false;
-                if (shouldLog)
+                // Loop through our custom actions we added via Rewired
+                foreach (int myActionId in myCustomActionIds.Keys)
                 {
-                    Debug.Log("_controllerMap is keyboard or mouse: " + (_controllerMap is KeyboardMap || _controllerMap is MouseMap));
-                    Debug.Log("_controllerMap is joystick: " + (_controllerMap is JoystickMap));
-                    Debug.Log("_controllerMap.categoryId: " + _controllerMap.categoryId);
-                    Debug.Log("action is keyboard: " + (myActionDescription.controlType == ControlType.Keyboard));
-                    Debug.Log("action is gamepad: " + (myActionDescription.controlType == ControlType.Gamepad));
-                    Debug.Log("action is both: " + (myActionDescription.controlType == ControlType.Both));
-                    Debug.Log("action.sectionId: " + myActionDescription.sectionId);
+                    FileLog.Log(myActionId.ToString()); // The info that the user specified for this action
+                    InputActionDescription myActionDescription = myCustomActionIds[myActionId];
+
+                    // There are separate keybinding maps for keyboard, mouse, & controllers
+                    // We only add our action-to-element mappings to the keybind maps that make sense
+                    // For example, if you are adding a key that doesn't make sense to have on a controller,
+                    // then skip when _controllerMap is JoystickMap
+                    //
+                    // (Optional)
+                    // You can check if this method is being called for the Keyboard/Mouse bindings panel or
+                    // the Controller bindings panel, but I prefer to check the class of the _controllerMap
+                    //   if (self.ControllerType == ControlMappingPanel.ControlType.Keyboard) {
+                    //
+
+                    bool shouldLog = false;
+                    if (shouldLog)
+                    {
+                        Debug.Log("_controllerMap is keyboard or mouse: " + (_controllerMap is KeyboardMap || _controllerMap is MouseMap));
+                        Debug.Log("_controllerMap is joystick: " + (_controllerMap is JoystickMap));
+                        Debug.Log("_controllerMap.categoryId: " + _controllerMap.categoryId);
+                        Debug.Log("action is keyboard: " + (myActionDescription.controlType == ControlType.Keyboard));
+                        Debug.Log("action is gamepad: " + (myActionDescription.controlType == ControlType.Gamepad));
+                        Debug.Log("action is both: " + (myActionDescription.controlType == ControlType.Both));
+                        Debug.Log("action.sectionId: " + myActionDescription.sectionId);
+                    }
+
+                    // If the controller map's control type does not match our action
+                    if (!(myActionDescription.controlType == ControlType.Keyboard && (_controllerMap is KeyboardMap || _controllerMap is MouseMap) ||
+                          myActionDescription.controlType == ControlType.Gamepad && (_controllerMap is JoystickMap) ||
+                          myActionDescription.controlType == ControlType.Both))
+                    {
+                        // Then skip to next action
+                        continue;
+                    }
+
+                    // If the categoryId of this controller map does not match our action's
+                    if (_controllerMap.categoryId != myActionDescription.sectionId)
+                    {
+                        // Skip to next action
+                        continue;
+                    }
+
+                    // If we pass the tests, create & add the action-to-element map for this particular action
+                    _controllerMap.CreateElementMap(myActionId, Pole.Positive, KeyCode.None, ModifierKeyFlags.None);
+
+                    // Continue the loop...
                 }
-
-                // If the controller map's control type does not match our action
-                if (!(myActionDescription.controlType == ControlType.Keyboard && (_controllerMap is KeyboardMap || _controllerMap is MouseMap) ||
-                      myActionDescription.controlType == ControlType.Gamepad && (_controllerMap is JoystickMap) ||
-                      myActionDescription.controlType == ControlType.Both))
-                {
-                    // Then skip to next action
-                    continue;
-                }
-
-                // If the categoryId of this controller map does not match our action's
-                if (_controllerMap.categoryId != myActionDescription.sectionId)
-                {
-                    // Skip to next action
-                    continue;
-                }
-
-                // If we pass the tests, create & add the action-to-element map for this particular action
-                _controllerMap.CreateElementMap(myActionId, Pole.Positive, KeyCode.None, ModifierKeyFlags.None);
-
-                // Continue the loop...
-            }
-
-            // We're done here. Call original implementation
-            orig(self, _controllerMap);
-        }
-
-        // Supply localized names that are shown in the keybindings menu
-        private static void LocalizationManager_StartLoading(On.LocalizationManager.orig_StartLoading orig, LocalizationManager self)
-        {
-            // What we want to do here can happen after the original implementation has done its thing
-            orig(self);
-
-            // Nab the localization dictionary that's used for keybind localization
-            Dictionary<string, string> m_generalLocalization = (Dictionary<string, string>) self.GetType().GetField("m_generalLocalization", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(self);
-
-            // Go through the added actions and use the user-created action descriptions to name them
-            foreach (int myActionId in myCustomActionIds.Keys)
-            {
-                InputAction myAction = ReInput.mapping.GetAction(myActionId);
-                InputActionDescription myActionDescription = myCustomActionIds[myActionId];
-
-                // The first string is the technical name of the action, while the second string is what you want to display in the bindings menu
-                m_generalLocalization.Add("InputAction_" + myAction.name, myActionDescription.name);
             }
         }
 
-        // The following is just a wrapper for UserData.AddAction(_categoryId) since it's a little fiddly to configure.
+        [HarmonyPatch(typeof(LocalizationManager), "StartLoading")]
+        public class LocalizationManager_StartLoading
+        {
+            public static void Postfix(LocalizationManager __instance, Dictionary<string, string> ___m_generalLocalization)
+            {
+                // Supply localized names that are shown in the keybindings menu
+                // Nab the localization dictionary that's used for keybind localization
+                Dictionary<string, string> m_generalLocalization = ___m_generalLocalization;
+
+                // Go through the added actions and use the user-created action descriptions to name them
+                foreach (int myActionId in myCustomActionIds.Keys)
+                {
+                    InputAction myAction = ReInput.mapping.GetAction(myActionId);
+                    InputActionDescription myActionDescription = myCustomActionIds[myActionId];
+
+                    // The first string is the technical name of the action, while the second string is what you want to display in the bindings menu
+                    m_generalLocalization.Add("InputAction_" + myAction.name, myActionDescription.name);
+                }
+            }
+        }
+
+// The following is just a wrapper for UserData.AddAction(_categoryId) since it's a little fiddly to configure.
         private static InputAction AddRewiredAction(UserData userData, string name, InputActionType type, string descriptiveName, int categoryId, bool userAssignable)
         {
             // Add an action to the data store

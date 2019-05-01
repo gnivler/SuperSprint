@@ -49,15 +49,6 @@
         <Reference Include="BepInEx.Harmony, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
           <HintPath>..\..\SteamLibrary\steamapps\common\Outward\BepInEx\core\BepInEx.Harmony.dll</HintPath>
         </Reference>
-        <Reference Include="HOOKS-Assembly-CSharp, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null">
-          <HintPath>..\..\SteamLibrary\steamapps\common\Outward\Outward_Data\Managed\HOOKS-Assembly-CSharp.dll</HintPath>
-        </Reference>
-        <Reference Include="MonoMod, Version=18.6.0.33005, Culture=neutral, PublicKeyToken=null">
-          <HintPath>..\..\Download\PartialityLauncher\bin\MonoMod.exe</HintPath>
-        </Reference>
-        <Reference Include="MonoMod.RuntimeDetour, Version=18.6.0.33006, Culture=neutral, PublicKeyToken=null">
-          <HintPath>..\..\Download\PartialityLauncher\bin\MonoMod.RuntimeDetour.dll</HintPath>
-        </Reference>
         <Reference Include="Rewired_Core, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
           <HintPath>..\..\SteamLibrary\steamapps\common\Outward\Outward_Data\Managed\Rewired_Core.dll</HintPath>
         </Reference>
@@ -80,6 +71,9 @@
       <Content Include="SuperSprint.json" />
     </ItemGroup>
     <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+    <PropertyGroup>
+        <PostBuildEvent>copy /y $(TargetPath) N:\SteamLibrary\steamapps\common\Outward\BepInEx\plugins</PostBuildEvent>
+    </PropertyGroup>
     <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
          Other similar extension points exist, see Microsoft.Common.targets.
     <Target Name="BeforeBuild">

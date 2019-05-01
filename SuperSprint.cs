@@ -4,10 +4,12 @@ using System.Reflection;
 using BepInEx;
 using Harmony;
 using UnityEngine;
+using static SuperSprint.Logger;
+using static SuperSprint.CustomKeybindings;
 
 namespace SuperSprint
 {
-    [BepInPlugin("com.gnivler.SuperSprint.Outward", "SuperSprint", "1.3")]
+    [BepInPlugin("com.gnivler.SuperSprint.Outward", "SuperSprint", "1.32")]
     public class SuperSprint : BaseUnityPlugin
     {
         internal static Settings modSettings = new Settings();
@@ -25,14 +27,14 @@ namespace SuperSprint
             var harmony = HarmonyInstance.Create("com.gnivler.SuperSprint.Outward");
             harmony.PatchAll(Assembly.GetExecutingAssembly());
 
-            CustomKeybindings.AddAction(
+            AddAction(
                 "SuperSprint Medium",
-                CustomKeybindings.KeybindingsCategory.Actions,
-                CustomKeybindings.ControlType.Both, 4);
-            CustomKeybindings.AddAction(
+                KeybindingsCategory.Actions,
+                ControlType.Both, 4);
+            AddAction(
                 "SuperSprint Fast",
-                CustomKeybindings.KeybindingsCategory.Actions,
-                CustomKeybindings.ControlType.Both, 4);
+                KeybindingsCategory.Actions,
+                ControlType.Both, 4);
 
             try
             {
@@ -46,10 +48,10 @@ namespace SuperSprint
             }
             catch (Exception e)
             {
-                global::SuperSprint.Logger.Error(e);
+                Error(e);
             }
 
-            Logger.LogDebug($"{DateTime.Now.ToShortTimeString()} SuperSprint Starting up");
+            Clear();
         }
     }
 
@@ -60,9 +62,10 @@ namespace SuperSprint
         [HarmonyPatch(typeof(LocalCharacterControl), "UpdateMovement", MethodType.Normal)]
         public class AutoRun
         {
-            public static void Postfix(bool ___m_autoRun)
+            public static void Postfix(LocalCharacterControl __instance, bool ___m_autoRun)
             {
-                if (!SuperSprint.modSettings.autoRun) return;
+                if (!SuperSprint.modSettings.autoRun ||
+                    __instance.Character.Faction != Character.Factions.Player) return;
                 autoRun = ___m_autoRun;
             }
         }
@@ -72,7 +75,10 @@ namespace SuperSprint
         {
             public static void Postfix(CharacterStats __instance, ref float __result)
             {
-                var character = Traverse.Create(__instance).Field("m_character").GetValue<Character>();
+                var character = Traverse
+                    .Create(__instance)
+                    .Field("m_character")
+                    .GetValue<Character>();
                 if (character.Faction != Character.Factions.Player) return;
                 if (SuperSprint.modSettings.autoRun && autoRun)
                 {
@@ -80,24 +86,15 @@ namespace SuperSprint
                 }
 
                 var playerID = character.OwnerPlayerSys.PlayerID;
-                if (CustomKeybindings.m_playerInputManager[playerID].GetButton("SuperSprint Medium"))
+                if (m_playerInputManager[playerID].GetButton("SuperSprint Medium"))
                 {
                     __result = SuperSprint.modSettings.mediumSpeed;
                 }
 
-                if (CustomKeybindings.m_playerInputManager[playerID].GetButton("SuperSprint Fast"))
+                if (m_playerInputManager[playerID].GetButton("SuperSprint Fast"))
                 {
                     __result = SuperSprint.modSettings.fastSpeed;
                 }
-            }
-        }
-
-        [HarmonyPatch(typeof(CraftingMenu), "TryCraft", MethodType.Normal)]
-        public class InstantCraft
-        {
-            public static void Prefix(ref float ___CraftingTime)
-            {
-                ___CraftingTime = 0f;
             }
         }
     }
